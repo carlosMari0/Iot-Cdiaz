@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard IoT</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<style>
+  :root{
+    --bg:#0f1117;
+    --panel:#171a23;
+    --panel-2:#1e2230;
+    --border:#2a2f3d;
+    --text:#e7e9ee;
+    --muted:#8b90a0;
+    --accent:#5b8cff;
+    --accent-2:#3ddc97;
+    --danger:#ff5b6e;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    font-family:'Segoe UI', system-ui, -apple-system, sans-serif;
+    background:radial-gradient(circle at 20% 0%, #1a1f2e, var(--bg) 60%);
+    color:var(--text);
+    min-height:100vh;
+    padding:24px;
+  }
+  header{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    flex-wrap:wrap;
+    gap:12px;
+    margin-bottom:24px;
+  }
+  header h1{
+    font-size:1.4rem;
+    margin:0;
+    display:flex;
+    align-items:center;
+    gap:10px;
+  }
+  .status{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    font-size:0.85rem;
+    color:var(--muted);
+    background:var(--panel);
+    border:1px solid var(--border);
+    padding:6px 12px;
+    border-radius:20px;
+  }
+  .dot{
+    width:9px;height:9px;border-radius:50%;
+    background:var(--muted);
+    transition:.2s;
+  }
+  .dot.ok{background:var(--accent-2); box-shadow:0 0 8px var(--accent-2);}
+  .dot.err{background:var(--danger); box-shadow:0 0 8px var(--danger);}
+
+  .grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fit, minmax(220px,1fr));
+    gap:16px;
+    margin-bottom:24px;
+  }
+  .card{
+    background:var(--panel);
+    border:1px solid var(--border);
+    border-radius:14px;
+    padding:18px 20px;
+  }
+  .card .label{
+    color:var(--muted);
+    font-size:.8rem;
+    text-transform:uppercase;
+    letter-spacing:.05em;
+    margin-bottom:6px;
+  }
+  .card .value{
+    font-size:1.8rem;
+    font-weight:600;
+  }
+  .card .sub{
+    color:var(--muted);
+    font-size:.75rem;
+    margin-top:4px;
+  }
+
+  .panel{
+    background:var(--panel);
+    border:1px solid var(--border);
+    border-radius:14px;
+    padding:20px;
+    margin-bottom:16px;
+  }
+  .panel h2{
+    font-size:1rem;
+    margin:0 0 14px 0;
+    color:var(--text);
+  }
+
+  table{
+    width:100%;
+    border-collapse:collapse;
+    font-size:.85rem;
+  }
+  th, td{
+    text-align:left;
+    padding:8px 10px;
+    border-bottom:1px solid var(--border);
+  }
+  th{color:var(--muted); font-weight:500;}
+
+  pre{
+    background:var(--panel-2);
+    border:1px solid var(--border);
+    border-radius:10px;
+    padding:12px;
+    font-size:.75rem;
+    color:var(--accent-2);
+    overflow:auto;
+    max-height:240px;
+  }
+
+  footer{
+    margin-top:24px;
+    text-align:center;
+    color:var(--muted);
+    font-size:.75rem;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>📡 Dashboard IoT — Recepción</h1>
+  <div class="status">
+    <span class="dot" id="statusDot"></span>
+    <span id="statusText">Conectando…</span>
+  </div>
+</header>
+
+<div class="grid" id="cardsGrid">
+  <div class="card"><div class="label">Último registro</div><div class="value" id="cardLastValue">—</div><div class="sub" id="cardLastSub">esperando datos…</div></div>
+  <div class="card"><div class="label">Registros mostrados</div><div class="value" id="cardCount">0</div><div class="sub">últimos disponibles</div></div>
+  <div class="card"><div class="label">Última actualización</div><div class="value" id="cardTime" style="font-size:1.1rem;">—</div><div class="sub">auto-refresh cada 5s</div></div>
+</div>
+
+<div class="panel">
+  <h2>Historial (últimos 2 registros)</h2>
+  <canvas id="chart" height="110"></canvas>
+  <table id="dataTable" style="margin-top:16px;">
+    <thead><tr id="tableHead"></tr></thead>
+    <tbody id="tableBody"></tbody>
+  </table>
+</div>
+
+<div class="panel">
+  <h2>Datos crudos (JSON)</h2>
+  <pre id="rawJson">Cargando…</pre>
+</div>
+
+<footer>Dashboard de recepción — se actualiza automáticamente cada 5 segundos</footer>
+
+<script>
+let chart;
+
+function setStatus(ok, text){
+  const dot = document.getElementById('statusDot');
+  const txt = document.getElementById('statusText');
+  dot.className = 'dot ' + (ok ? 'ok' : 'err');
+  txt.textContent = text;
+}
+
+function pickNumericKey(obj){
+  for(const k in obj){
+    if(typeof obj[k] === 'number') return k;
+  }
+  return null;
+}
+
+function renderTable(data){
+  const head = document.getElementById('tableHead');
+  const body = document.getElementById('tableBody');
+  head.innerHTML = '';
+  body.innerHTML = '';
+  if(!Array.isArray(data) || data.length === 0){
+    body.innerHTML = '<tr><td colspan="5" style="color:var(--muted)">Sin datos aún</td></tr>';
+    return;
+  }
+  const keys = Object.keys(data[data.length-1]);
+  keys.forEach(k => {
+    const th = document.createElement('th');
+    th.textContent = k;
+    head.appendChild(th);
+  });
+  data.forEach(row => {
+    const tr = document.createElement('tr');
+    keys.forEach(k => {
+      const td = document.createElement('td');
+      td.textContent = typeof row[k] === 'object' ? JSON.stringify(row[k]) : row[k];
+      tr.appendChild(td);
+    });
+    body.appendChild(tr);
+  });
+}
+
+function renderChart(data){
+  if(!Array.isArray(data) || data.length === 0) return;
+  const numKey = pickNumericKey(data[0]) || pickNumericKey(data[data.length-1]);
+  const labels = data.map((d,i) => d.timestamp || d.fecha || ('registro ' + (i+1)));
+  const values = data.map(d => numKey ? d[numKey] : 0);
+
+  const ctx = document.getElementById('chart').getContext('2d');
+  if(chart){
+    chart.data.labels = labels;
+    chart.data.datasets[0].label = numKey || 'valor';
+    chart.data.datasets[0].data = values;
+    chart.update();
+    return;
+  }
+  chart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        label: numKey || 'valor',
+        data: values,
+        borderColor: '#5b8cff',
+        backgroundColor: 'rgba(91,140,255,0.15)',
+        tension: 0.35,
+        fill: true,
+        pointRadius: 4,
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { labels: { color: '#8b90a0' } } },
+      scales: {
+        x: { ticks: { color: '#8b90a0' }, grid: { color: '#2a2f3d' } },
+        y: { ticks: { color: '#8b90a0' }, grid: { color: '#2a2f3d' } }
+      }
+    }
+  });
+}
+
+async function loadData(){
+  try{
+    const res = await fetch('/data');
+    const data = await res.json();
+
+    if(!res.ok){
+      throw new Error(data.error || data.mensaje || 'Error desconocido');
+    }
+
+    setStatus(true, 'Conectado');
+    document.getElementById('rawJson').textContent = JSON.stringify(data, null, 2);
+    document.getElementById('cardCount').textContent = Array.isArray(data) ? data.length : 0;
+    document.getElementById('cardTime').textContent = new Date().toLocaleTimeString();
+
+    if(Array.isArray(data) && data.length > 0){
+      const last = data[data.length-1];
+      const numKey = pickNumericKey(last);
+      document.getElementById('cardLastValue').textContent = numKey ? last[numKey] : '—';
+      document.getElementById('cardLastSub').textContent = numKey ? numKey : 'sin campo numérico';
+    }
+
+    renderTable(data);
+    renderChart(data);
+  }catch(err){
+    setStatus(false, 'Error: ' + err.message);
+    document.getElementById('rawJson').textContent = 'Error al obtener datos: ' + err.message;
+  }
+}
+
+loadData();
+setInterval(loadData, 5000);
+</script>
+</body>
+</html>
