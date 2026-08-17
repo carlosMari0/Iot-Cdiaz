@@ -7,7 +7,7 @@ app.use(express.json());
  
 // ============================================
 // GET /data - Obtiene los últimos 2 registros del profesor
-// ============================================
+// ============================================ch
 app.get("/data", async (req, res) => {
     try {
         const respuesta = await fetch("https://callback-iot-service-production.up.railway.app/data");
@@ -73,6 +73,14 @@ app.post("/visualize", async (req, res) => {
             sugerencia: "Verifica que el servicio del profesor esté activo"
         });
     }
+});
+
+app.get("/", (req, res) => {
+    res.sendFile(__dirname + "/dashboard.html");
+});
+
+app.get("/dashboard", (req, res) => {
+    res.sendFile(__dirname + "/dashboard.html");
 });
  
 // ============================================
