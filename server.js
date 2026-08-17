@@ -10,7 +10,7 @@ app.use(express.json());
 // ============================================ch
 app.get("/data", async (req, res) => {
     try {
-        const respuesta = await fetch("https://callback-iot-service-production.up.railway.app/data");
+        const respuesta = await fetch("https://iot-cdiaz-production-c67b.up.railway.app/data");
         const datos = await respuesta.json();
         const ultimosDos = datos.slice(-2);
         res.json(ultimosDos);
@@ -41,7 +41,7 @@ app.post("/visualize", async (req, res) => {
         console.log("📥 Datos recibidos del estudiante:", datosRecibidos);
  
         // Enviar los datos al profesor en Railway
-        const respuestaProfesor = await fetch("https://callback-iot-service-production.up.railway.app/data", {
+        const respuestaProfesor = await fetch("https://iot-cdiaz-production-c67b.up.railway.app/data", {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
