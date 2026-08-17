@@ -1,94 +1,82 @@
+// ============================================
+// SERVIDOR COMPLETO PARA IOT
+// ============================================
+
 const express = require('express');
+const fs = require('fs');
+const path = require('path');
 const app = express();
-const PORT = 3000;
- 
-// Middleware para recibir JSON
+const PORT = process.env.PORT || 3000;
+
 app.use(express.json());
- 
-// ============================================
-// GET /data - Obtiene los últimos 2 registros del profesor
-// ============================================ch
-app.get("/data", async (req, res) => {
+app.use(express.static('public'));
+
+app.post("/data", (req, res) => {
+  const datosRecibidos = req.body;
+  if (!datosRecibidos || Object.keys(datosRecibidos).length === 0) {
+    return res.status(400).json({
+      error: "No se enviaron datos"
+    });
+  }
+  try {
+    let datosGuardados = [];
     try {
-        const respuesta = await fetch("https://iot-cdiaz-production-c67b.up.railway.app/data");
-        const datos = await respuesta.json();
-        const ultimosDos = datos.slice(-2);
-        res.json(ultimosDos);
-    } catch (error) {
-        console.error("❌ Error en GET /data:", error.message);
-        res.status(500).json({
-            error: "No se pudieron obtener los datos del profesor",
-            mensaje: error.message
-        });
+      const dataLocal = fs.readFileSync('datos.json', 'utf8');
+      datosGuardados = JSON.parse(dataLocal);
+    } catch (e) {
+      console.log("📝 Creando nuevo archivo de datos");
     }
-});
- 
-// ============================================
-// POST /visualize - Recibe datos y los envía al profesor
-// ============================================
-app.post("/visualize", async (req, res) => {
-    const datosRecibidos = req.body;
- 
-    // Validar que llegaron datos
-    if (!datosRecibidos || Object.keys(datosRecibidos).length === 0) {
-        return res.status(400).json({
-            error: "No se enviaron datos",
-            sugerencia: "Envía un JSON con temperatura, humedad, etc."
-        });
-    }
- 
-    try {
-        console.log("📥 Datos recibidos del estudiante:", datosRecibidos);
- 
-        // Enviar los datos al profesor en Railway
-        const respuestaProfesor = await fetch("https://iot-cdiaz-production-c67b.up.railway.app/data", {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(datosRecibidos)
-        });
- 
-        if (!respuestaProfesor.ok) {
-            throw new Error(`Error del profesor: ${respuestaProfesor.status}`);
-        }
- 
-        const resultadoProfesor = await respuestaProfesor.json();
- 
-        console.log("✅ Datos enviados al profesor correctamente");
- 
-        // Responder al estudiante
-        res.json({
-            mensaje: "✅ Datos enviados al profesor correctamente",
-            datosEnviados: datosRecibidos,
-            respuestaProfesor: resultadoProfesor,
-            timestamp: new Date().toISOString()
-        });
- 
-    } catch (error) {
-        console.error("❌ Error en POST /visualize:", error.message);
-        res.status(500).json({
-            error: "No se pudo enviar al profesor",
-            mensaje: error.message,
-            sugerencia: "Verifica que el servicio del profesor esté activo"
-        });
-    }
+    const nuevoRegistro = {
+      ...datosRecibidos,
+      timestamp: new Date().toISOString(),
+      ip: req.ip || req.connection.remoteAddress,
+      user_agent: req.headers['user-agent'] || 'unknown'
+    };
+    datosGuardados.push(nuevoRegistro);
+    fs.writeFileSync('datos.json', JSON.stringify(datosGuardados, null, 2));
+    console.log(`✅ Datos guardados (total: ${datosGuardados.length} registros)`);
+    res.json({
+      mensaje: "✅ Datos recibidos y guardados correctamente",
+      totalRegistros: datosGuardados.length,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error("❌ Error:", error.message);
+    res.status(500).json({
+      error: "No se pudieron guardar los datos",
+      mensaje: error.message
+    });
+  }
 });
 
-app.get("/", (req, res) => {
-    res.sendFile(__dirname + "/dashboard.html");
+app.get("/data", (req, res) => {
+  try {
+    const dataLocal = fs.readFileSync('datos.json', 'utf8');
+    const datos = JSON.parse(dataLocal);
+    res.json(datos);
+  } catch (e) {
+    res.json([]);
+  }
 });
 
 app.get("/dashboard", (req, res) => {
-    res.sendFile(__dirname + "/dashboard.html");
+  res.sendFile(path.join(__dirname, 'dashboard.html'));
 });
- 
-// ============================================
-// Iniciar servidor
-// ============================================
+
+app.get("/", (req, res) => {
+  res.json({
+    servicio: "Callback IoT para Estudiantes",
+    endpoints: {
+      "POST /data": "Enviar datos de sensores",
+      "GET /data": "Ver todos los datos",
+      "GET /dashboard": "Dashboard web"
+    }
+  });
+});
+
 app.listen(PORT, () => {
-    console.log(`✅ Servidor corriendo en http://localhost:${PORT}`);
-    console.log(`📊 GET /data  -> http://localhost:${PORT}/data`);
-    console.log(`📤 POST /visualize -> http://localhost:${PORT}/visualize`);
-    console.log(`💡 Los datos se envían al profesor en Railway`);
+  console.log(`✅ Servicio funcionando en puerto ${PORT}`);
+  console.log(`📊 GET /data -> https://iot-cdiaz-production-c67b.up.railway.app/data`);
+  console.log(`📤 POST /data -> https://iot-cdiaz-production-c67b.up.railway.app/data`);
+  console.log(`📱 Dashboard -> https://iot-cdiaz-production-c67b.up.railway.app/dashboard`);
 });
